@@ -2,15 +2,16 @@
 
 ## 🎯 Objetivo
 
-Criar **Dockerfiles** e um **docker-compose.yml** para o backend (FastAPI) e frontend (Next.js) do CondoCombat, e configurar uma pipeline de **Integração Contínua (CI)** no GitLab CI/CD que executa lint, testes, build e push das imagens para o **DockerHub**.
+Criar **Dockerfiles** e um **docker-compose.yml** para o backend (FastAPI) e frontend (Next.js) do CondoCombat, e configurar **3 arquivos de pipeline** de **Integração Contínua (CI)** no GitLab CI/CD que executam lint, testes, build e push das imagens para o **DockerHub**.
 
-A pipeline deve:
+As pipelines devem:
 
-1. **Executar lint** no backend (Ruff) e frontend (ESLint)
-2. **Executar testes automatizados** (pytest + vitest)
-3. **Fazer o build das imagens Docker** e **publicar no DockerHub**
+1. **Pipeline do Backend** (`.gitlab-ci/backend.yml`): Executar lint (Ruff) → testes (pytest) → build Docker → push DockerHub
+2. **Pipeline do Frontend** (`.gitlab-ci/frontend.yml`): Executar lint (ESLint) → testes (Vitest) → build Docker → push DockerHub
+3. **Arquivo principal** (`.gitlab-ci.yml`): Incluir os dois pipelines com `include:` e filtrar por `rules:changes`
+4. **Rodar localmente** com Docker Compose usando as imagens publicadas
 
-Pipeline configurada para **GitLab CI/CD**.
+Pipelines configuradas como **arquivos separados** no GitLab CI/CD.
 
 ---
 
@@ -20,180 +21,152 @@ Pipeline configurada para **GitLab CI/CD**.
 
 | Item | Detalhe |
 |------|---------|
-| Framework | FastAPI + Python 3.12 |
-| Porta | 8000 |
-| Testes | pytest-asyncio (216 testes) |
-| Lint | Ruff |
-| Comando teste | `pytest` |
-| Comando lint | `ruff check app/` |
-| Pasta do Dockerfile | `backend/` |
+| **Framework** | FastAPI 0.115+ com SQLAlchemy Async |
+| **Linter** | Ruff (`ruff check app/`) |
+| **Testes** | pytest (`pytest`) |
+| **Porta** | 8000 (uvicorn) |
+| **Banco** | PostgreSQL 16 + Alembic |
+| **Entrypoint** | `backend/app/main.py` |
+| **Dependências** | `backend/requirements.txt` |
 
 ### Frontend (Next.js)
 
 | Item | Detalhe |
 |------|---------|
-| Framework | Next.js 14 + TypeScript strict |
-| Porta | 3000 |
-| Testes | Vitest + Testing Library (79 testes) |
-| Lint | ESLint (next lint) |
-| Comando teste | `npm run test` |
-| Comando lint | `npm run lint` |
-| Pasta do Dockerfile | `frontend/` |
+| **Framework** | Next.js 14 App Router + shadcn/ui |
+| **Linter** | ESLint (`npm run lint`) |
+| **Testes** | Vitest (`npm run test`) |
+| **Porta** | 3000 (Next.js dev) |
+| **Build** | `npm run build` |
+| **Entrypoint** | `frontend/next.config.js` |
+| **Dependências** | `frontend/package.json` |
 
 ---
 
 ## 📋 Pré-requisitos
 
-- [ ] Conta no [DockerHub](https://hub.docker.com/)
-- [ ] Repositório no [GitLab](https://gitlab.com)
-- [ ] Docker instalado localmente (opcional, para testes)
+1. **Conta no DockerHub**
+   - Crie em [hub.docker.com](https://hub.docker.com/)
+   - Crie um Access Token em Account Settings → Security
+
+2. **Conta no GitLab**
+   - Repositório do CondoCombat importado ou criado no GitLab
+
+3. **Docker instalado localmente**
+   - Para testar os Dockerfiles
+   - Para rodar o docker-compose
+
+4. **Permissões de push** no repositório GitLab
 
 ---
 
 ## 🔐 Variáveis de Ambiente (CI/CD Variables)
 
-Configure as seguintes variáveis no GitLab (Settings → CI/CD → Variables):
+Configure estas variáveis no GitLab (Settings → CI/CD → Variables):
 
-| Variável | Descrição | Onde conseguir |
-|----------|-----------|---------------|
-| `DOCKERHUB_USERNAME` | Nome de usuário do DockerHub | DockerHub → Account Settings |
-| `DOCKERHUB_TOKEN` | Token de acesso ao DockerHub | DockerHub → Account Settings → Security → New Access Token |
-| `SECRET_KEY` | Chave secreta para JWT do backend | Gerar com `python -c 'import secrets; print(secrets.token_urlsafe(32))'` |
+| Variável | Valor | Descrição | Masked | Protected |
+|----------|-------|-----------|--------|-----------|
+| `DOCKERHUB_USERNAME` | Seu usuário DockerHub | Username para login | Não | Não |
+| `DOCKERHUB_TOKEN` | Access Token do DockerHub | Token em vez de senha | Sim | Sim |
+| `SECRET_KEY` | Chave JWT de 32 caracteres | Backend valida na inicialização | Sim | Sim |
 
-### Como gerar o `DOCKERHUB_TOKEN`
-
-1. Acesse [hub.docker.com](https://hub.docker.com) e faça login
-2. Vá em **Account Settings** (foto do canto superior direito) → **Security**
-3. Em **Access Tokens**, clique em **New Access Token**
-4. Dê um nome (ex: `gitlab-ci-condocombat`), selecione permissão **Read & Write**
-5. Copie o token gerado (você não poderá vê-lo novamente)
-6. Adicione como variável no GitLab com o nome `DOCKERHUB_TOKEN`
-
-### Como gerar a `SECRET_KEY`
-
-O backend do CondoCombat usa uma chave secreta para assinar tokens JWT. Gere uma com Python:
-
+**Como gerar a SECRET_KEY**:
 ```bash
 python -c 'import secrets; print(secrets.token_urlsafe(32))'
 ```
 
-Copie o resultado e adicione como variável no GitLab com o nome `SECRET_KEY`.
-
-> ⚠️ A `SECRET_KEY` é **obrigatória**. O backend valida na inicialização e **crasha** se não for definida.
-
-### Configuração de visibilidade
-
-| Variável | Tipo | Recomendação |
-|----------|------|-------------|
-| `DOCKERHUB_USERNAME` | Variable | Pode ficar como "Variable" (não mascarada) |
-| `DOCKERHUB_TOKEN` | Masked | Marcar como "Masked" |
-| `SECRET_KEY` | Masked | Marcar como "Masked" |
-
-Se a branch `main` for protegida, marque `DOCKERHUB_TOKEN` e `SECRET_KEY` também como "Protected".
+> **Importante**: Marque `DOCKERHUB_TOKEN` e `SECRET_KEY` como **Masked** (mascarados) para não aparecerem nos logs. Se a branch `main` for protegida, marque também como **Protected** para que só pipelines da `main` tenham acesso.
 
 ---
 
 ## 🏗️ Criando o Dockerfile do Backend
 
-Crie o arquivo `backend/Dockerfile` com **multi-stage build**:
+Crie o arquivo `backend/Dockerfile` com **multi-stage build** em 2 estágios:
 
 ### Etapas
 
-1. **Stage 1 (builder)**: Instala as dependências Python do `requirements.txt`
-2. **Stage 2 (runtime)**: Cópia mínima dos artefatos, configura entrada com migrations + uvicorn
+1. **Stage 1 (deps)**: Instala dependências Python
+2. **Stage 2 (runtime)**: Imagem final com usuário não-root
 
 ### `backend/Dockerfile`
 
 ```dockerfile
 # =============================================================================
-# Stage 1: Builder — instala dependências
+# Stage 1: Dependencies — instala dependências Python
 # =============================================================================
-FROM python:3.12-slim AS builder
+FROM python:3.12-slim AS deps
 
-# Define diretório de trabalho
 WORKDIR /app
 
-# Copia apenas o requirements.txt primeiro (aproveita cache do Docker)
-COPY requirements.txt .
+# Instala sistema básico e dependências de compilação
+RUN apt-get update && apt-get install -y \
+    gcc \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
 
-# Instala dependências em um diretório global
+# Copia requirements e instala dependências
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # =============================================================================
-# Stage 2: Runtime — imagem final enxuta
+# Stage 2: Runtime — imagem final
 # =============================================================================
 FROM python:3.12-slim AS runtime
 
-# Cria usuário não-root para segurança
-RUN addgroup --system app && adduser --system --ingroup app app
-
-# Define diretório de trabalho
 WORKDIR /app
 
-# Copia as dependências instaladas do stage builder
-COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
+# Instala dependências de runtime
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copia o código da aplicação
+# Cria usuário não-root
+RUN useradd --create-home --shell /bin/bash app
+
+# Copia dependências do stage deps
+COPY --from=deps /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=deps /usr/local/bin /usr/local/bin
+
+# Copia código fonte
 COPY app/ app/
 COPY alembic/ alembic/
 COPY alembic.ini .
 
-# Copia o entrypoint
+# Copia e configura script de entrada
 COPY entrypoint.sh .
 RUN chmod +x entrypoint.sh
 
-# Expõe a porta da aplicação
-EXPOSE 8000
-
-# Health check: verifica se a API responde
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
-
-# Muda para usuário não-root
+# Troca para usuário não-root
 USER app
 
-# Entrypoint: roda migrations antes de iniciar o servidor
+# Expõe porta e health check
+EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Entry point
 ENTRYPOINT ["./entrypoint.sh"]
 ```
 
 ### `backend/entrypoint.sh`
 
-Crie também o arquivo `backend/entrypoint.sh`:
-
 ```bash
 #!/bin/bash
-# =============================================================================
-# entrypoint.sh — Executa migrations e inicia o servidor
-# =============================================================================
 set -e
 
-echo ">>> Executando migrations do banco de dados..."
+# Valida SECRET_KEY obrigatória
+if [ -z "$SECRET_KEY" ]; then
+    echo "❌ ERRO: SECRET_KEY não está definida!"
+    echo "   Gere uma com: python -c 'import secrets; print(secrets.token_urlsafe(32))'"
+    exit 1
+fi
+
+echo "🔧 Rodando migrations do Alembic..."
 alembic upgrade head
 
-echo ">>> Iniciando servidor FastAPI..."
-exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+echo "🚀 Iniciando servidor FastAPI..."
+exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
-
-> ⚠️ Dê permissão de execução: `chmod +x backend/entrypoint.sh`
-
-### Explicação linha a linha
-
-| Linha | O que faz |
-|-------|-----------|
-| `FROM python:3.12-slim AS builder` | Imagem base leve para instalar dependências |
-| `WORKDIR /app` | Define o diretório de trabalho |
-| `COPY requirements.txt .` | Copia apenas o arquivo de dependências |
-| `RUN pip install ...` | Instala todas as dependências |
-| `FROM python:3.12-slim AS runtime` | Segunda etapa — imagem final |
-| `addgroup / adduser` | Cria usuário não-root (`app`) |
-| `COPY --from=builder ...` | Copia pacotes Python do builder |
-| `COPY app/ app/` | Copia o código da aplicação |
-| `COPY entrypoint.sh .` | Copia o script de entrada |
-| `EXPOSE 8000` | Documenta a porta |
-| `HEALTHCHECK` | Verifica periodicamente se a API está saudável |
-| `USER app` | Muda para usuário não-root |
-| `ENTRYPOINT ["./entrypoint.sh"]` | Executa o entrypoint |
 
 ---
 
@@ -230,194 +203,136 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copia node_modules do stage deps
+# Copia dependências do stage deps
 COPY --from=deps /app/node_modules ./node_modules
 
-# Copia o código fonte
+# Copia código fonte
 COPY . .
 
-# Compila o Next.js (gera .next/)
+# Build da aplicação Next.js
 RUN npm run build
 
 # =============================================================================
-# Stage 3: Runner — imagem final de produção
+# Stage 3: Runner — imagem de produção
 # =============================================================================
 FROM node:20-alpine AS runner
 
-# Cria usuário não-root para segurança
-RUN addgroup --system app && adduser --system --ingroup app app
-
 WORKDIR /app
 
-# Copia os artefatos do build
-COPY --from=builder /app/.next ./.next
+# Instala dependências de runtime (mínimas)
+RUN npm add next@latest
+
+# Cria usuário não-root
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
+
+# Copia arquivos buildados
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/package.json ./package.json
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Instala apenas dependências de produção (sem devDependencies)
-RUN npm ci --omit=dev
+# Troca para usuário não-root
+USER nextjs
 
-# Expõe a porta da aplicação
+# Expõe porta e health check
 EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:3000 || exit 1
 
-# Health check: verifica se o servidor responde
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1
-
-# Muda para usuário não-root
-USER app
-
-# Inicia o servidor Next.js em modo produção
-CMD ["npm", "start"]
+# Inicia servidor Next.js
+CMD ["node", "server.js"]
 ```
-
-### Explicação de cada stage
-
-| Stage | O que faz |
-|-------|-----------|
-| **deps** | Instala `node_modules` com `npm ci` (instalação exata do lockfile, mais rápida e determinística que `npm install`) |
-| **builder** | Copia node_modules do deps + código fonte, executa `npm run build` para gerar a pasta `.next/` |
-| **runner** | Copia apenas `.next/`, `public/`, `package.json` e instala só deps de produção. Imagem final leve (~200MB vs ~1.5GB com devDeps) |
 
 ---
 
 ## 🐳 Criando o docker-compose.yml
 
-Crie o arquivo `docker-compose.yml` na **raiz do projeto** (`condocombat/docker-compose.yml`).
-
-### `docker-compose.yml`
+Crie o arquivo `docker-compose.yml` na raiz do projeto:
 
 ```yaml
 # =============================================================================
-# CondoCombat — Stack completa (PostgreSQL + API + Frontend)
+# CondoCombat — Docker Compose (Backend + Frontend + Database)
 # =============================================================================
-services:
+version: '3.8'
 
-  # ---------------------------------------------------------------------------
-  # Banco de Dados — PostgreSQL 16
-  # ---------------------------------------------------------------------------
+services:
+  # PostgreSQL Database
   db:
     image: postgres:16-alpine
     container_name: condocombat-db
-    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-condocombat}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-condocombat}
       POSTGRES_DB: ${POSTGRES_DB:-condocombat}
-    ports:
-      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-condocombat} -d ${POSTGRES_DB:-condocombat}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-condocombat}"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
 
-  # ---------------------------------------------------------------------------
-  # API — FastAPI (backend)
-  # ---------------------------------------------------------------------------
+  # Backend API (FastAPI)
   api:
-    build:
-      context: ./backend
+    image: your-dockerhub-username/condocombat-backend:latest
     container_name: condocombat-api
-    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-condocombat}:${POSTGRES_PASSWORD:-condocombat}@db:5432/${POSTGRES_DB:-condocombat}
+      SECRET_KEY: ${SECRET_KEY}
     ports:
       - "8000:8000"
-    environment:
-      SECRET_KEY: ${SECRET_KEY}
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-condocombat}:${POSTGRES_PASSWORD:-condocombat}@db:5432/${POSTGRES_DB:-condocombat}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
     depends_on:
       db:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
-
-  # ---------------------------------------------------------------------------
-  # Frontend — Next.js (web)
-  # ---------------------------------------------------------------------------
-  web:
-    build:
-      context: ./frontend
-    container_name: condocombat-web
     restart: unless-stopped
+
+  # Frontend (Next.js)
+  web:
+    image: your-dockerhub-username/condocombat-frontend:latest
+    container_name: condocombat-web
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
     ports:
       - "3000:3000"
-    environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     depends_on:
-      api:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
+      - api
+    restart: unless-stopped
 
-# ---------------------------------------------------------------------------
-# Volumes
-# ---------------------------------------------------------------------------
 volumes:
   pgdata:
-```
-
-### Explicação de cada serviço
-
-| Serviço | Função | Depende de | Porta |
-|---------|--------|------------|-------|
-| **db** | PostgreSQL 16 Alpine — banco de dados relacional | — | 5432 |
-| **api** | FastAPI — backend com migrations automáticas | db (saudável) | 8000 |
-| **web** | Next.js — frontend SPA | api (saudável) | 3000 |
-
-### Variáveis de ambiente
-
-O `docker-compose.yml` usa o padrão `${VAR:-default}`. Isso permite:
-
-1. Criar um arquivo `.env` na raiz com os valores reais
-2. Usar os defaults para desenvolvimento local rápido
-
-```bash
-# Crie o .env a partir do exemplo
-cp .env.example .env
-
-# Edite com sua SECRET_KEY
-# O resto já tem defaults funcionais para Docker Compose
+    driver: local
 ```
 
 ---
 
-## 📝 Pipeline CI/CD
+## 📝 Pipeline do Backend
 
-Crie o arquivo `.gitlab-ci.yml` na **raiz do repositório**:
+Crie o diretório `.gitlab-ci/` e dentro dele o arquivo `backend.yml`:
 
 ```yaml
-image: docker:27
-
-services:
-  - docker:dind
-
-variables:
-  DOCKER_DRIVER: overlay2
-  DOCKER_TLS_CERTDIR: ""
-
+# =============================================================================
+# Pipeline do Backend — Lint → Test → Build → Push
+# =============================================================================
 stages:
   - lint
   - test
   - build
 
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
 # ---------------------------------------------------------------------------
-# Lint do Backend (Ruff)
+# Lint — Ruff
 # ---------------------------------------------------------------------------
-lint-backend:
+lint:
   stage: lint
   image: python:3.12-slim
+  cache:
+    key: backend-pip
+    paths:
+      - .cache/pip
   before_script:
     - pip install ruff
   script:
@@ -428,9 +343,74 @@ lint-backend:
         - backend/**/*
 
 # ---------------------------------------------------------------------------
-# Lint do Frontend (ESLint)
+# Test — pytest
 # ---------------------------------------------------------------------------
-lint-frontend:
+test:
+  stage: test
+  image: python:3.12-slim
+  cache:
+    key: backend-pip
+    paths:
+      - .cache/pip
+  before_script:
+    - pip install -r backend/requirements.txt
+  script:
+    - cd backend
+    - pytest
+  variables:
+    SECRET_KEY: $SECRET_KEY
+  rules:
+    - changes:
+        - backend/**/*
+
+# ---------------------------------------------------------------------------
+# Build — Docker image → Push to DockerHub
+# ---------------------------------------------------------------------------
+build:
+  stage: build
+  image: docker:27
+  services:
+    - docker:dind
+  variables:
+    DOCKER_TLS_CERTDIR: ""
+  before_script:
+    - docker login -u $DOCKERHUB_USERNAME -p $DOCKERHUB_TOKEN
+  script:
+    - docker build -t $DOCKERHUB_USERNAME/condocombat-backend:latest ./backend
+    - docker push $DOCKERHUB_USERNAME/condocombat-backend:latest
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      changes:
+        - backend/**/*
+```
+
+---
+
+## 📝 Pipeline do Frontend
+
+Crie o arquivo `.gitlab-ci/frontend.yml`:
+
+```yaml
+# =============================================================================
+# Pipeline do Frontend — Lint → Test → Build → Push
+# =============================================================================
+stages:
+  - lint
+  - test
+  - build
+
+variables:
+  npm_config_cache: "$CI_PROJECT_DIR/.npm"
+
+cache:
+  key: frontend-npm
+  paths:
+    - .npm
+
+# ---------------------------------------------------------------------------
+# Lint — ESLint
+# ---------------------------------------------------------------------------
+lint:
   stage: lint
   image: node:20-alpine
   before_script:
@@ -444,28 +424,15 @@ lint-frontend:
         - frontend/**/*
 
 # ---------------------------------------------------------------------------
-# Testes do Backend (pytest)
+# Test — Vitest
 # ---------------------------------------------------------------------------
-test-backend:
-  stage: test
-  image: python:3.12-slim
-  before_script:
-    - pip install -r backend/requirements.txt
-  script:
-    - cd backend
-    - pytest
-  variables:
-    SECRET_KEY: $SECRET_KEY
-  rules:
-    - changes:
-        - backend/**/*
-
-# ---------------------------------------------------------------------------
-# Testes do Frontend (Vitest)
-# ---------------------------------------------------------------------------
-test-frontend:
+test:
   stage: test
   image: node:20-alpine
+  cache:
+    key: frontend-npm
+    paths:
+      - frontend/node_modules
   before_script:
     - cd frontend
     - npm ci
@@ -477,126 +444,96 @@ test-frontend:
         - frontend/**/*
 
 # ---------------------------------------------------------------------------
-# Build e Push da imagem do Backend para o DockerHub
+# Build — Docker image → Push to DockerHub
 # ---------------------------------------------------------------------------
-build-backend:
+build:
   stage: build
+  image: docker:27
+  services:
+    - docker:dind
+  variables:
+    DOCKER_TLS_CERTDIR: ""
   before_script:
     - docker login -u $DOCKERHUB_USERNAME -p $DOCKERHUB_TOKEN
   script:
-    - docker build -t $DOCKERHUB_USERNAME/condocombat-api:latest ./backend
-    - docker push $DOCKERHUB_USERNAME/condocombat-api:latest
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
-      changes:
-        - backend/**/*
-
-# ---------------------------------------------------------------------------
-# Build e Push da imagem do Frontend para o DockerHub
-# ---------------------------------------------------------------------------
-build-frontend:
-  stage: build
-  before_script:
-    - docker login -u $DOCKERHUB_USERNAME -p $DOCKERHUB_TOKEN
-  script:
-    - docker build -t $DOCKERHUB_USERNAME/condocombat-web:latest ./frontend
-    - docker push $DOCKERHUB_USERNAME/condocombat-web:latest
+    - docker build -t $DOCKERHUB_USERNAME/condocombat-frontend:latest ./frontend
+    - docker push $DOCKERHUB_USERNAME/condocombat-frontend:latest
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
       changes:
         - frontend/**/*
 ```
 
-### Explicação dos jobs
+---
 
-| Job | Responsabilidade | Stage |
-|-----|-----------------|-------|
-| `lint-backend` | Verifica estilo do código Python com Ruff | lint |
-| `lint-frontend` | Verifica estilo do código TypeScript/React com ESLint | lint |
-| `test-backend` | Executa 216 testes do backend com pytest | test |
-| `test-frontend` | Executa 79 testes do frontend com Vitest | test |
-| `build-backend` | Build da imagem Docker do backend e push para DockerHub | build |
-| `build-frontend` | Build da imagem Docker do frontend e push para DockerHub | build |
+## 📝 Arquivo Principal
 
-### Fluxo da pipeline
+Crie o arquivo `.gitlab-ci.yml` na **raiz do repositório**. Ele inclui os dois pipelines com `include:` e o GitLab CI/CD automaticamente executa apenas os jobs cujas `rules:changes` corresponderem aos arquivos modificados no push.
 
+```yaml
+# =============================================================================
+# CondoCombat — Pipeline Principal
+# Inclui pipelines separadas para backend e frontend
+# =============================================================================
+include:
+  - local: .gitlab-ci/backend.yml
+  - local: .gitlab-ci/frontend.yml
 ```
-lint ──► test ──► build
-```
 
-No GitLab CI/CD, jobs do mesmo stage rodam em paralelo. Jobs do stage seguinte só iniciam quando todos os jobs do stage anterior terminam com sucesso.
+### Como funciona
 
-- **Stage lint**: `lint-backend` e `lint-frontend` rodam em paralelo
-- **Stage test**: `test-backend` e `test-frontend` rodam em paralelo (após lint)
-- **Stage build**: `build-backend` e `build-frontend` rodam em paralelo (após test)
-
-### Regras de execução (`rules`)
-
-Cada job usa `rules:changes` para ser executado **apenas quando arquivos relevantes são alterados**:
-
-- `backend/**/*` — qualquer arquivo do backend ativa jobs do backend
-- `frontend/**/*` — qualquer arquivo do frontend ativa jobs do frontend
-
-Isso evita rodar a pipeline inteira quando a landing page (`landing/`) é alterada.
-
-Os jobs de build têm uma regra adicional: `if: $CI_COMMIT_BRANCH == "main"`. Isso significa que o build e push para o DockerHub só acontecem em pushes para a branch `main`.
-
-### Docker-in-Docker
-
-O GitLab CI/CD usa `docker:dind` (Docker in Docker) para executar comandos Docker dentro do pipeline. O serviço `docker:dind` é declarado em `services:` e a imagem base `docker:27` já vem com o cliente Docker instalado.
+1. Quando você faz push para `main`, o GitLab CI/CD carrega o `.gitlab-ci.yml`
+2. Ele encontra as duas pipelines incluídas via `include:`
+3. Cada job dentro delas tem `rules:changes` que filtra por diretório
+4. Se você alterou só o `backend/`, apenas os jobs do backend executam
+5. Se alterou só o `frontend/`, apenas os jobs do frontend executam
+6. Se alterou ambos, os dois pipelines rodam em paralelo
 
 ---
 
 ## 🐳 Rodando o Stack Local com Docker Compose
 
-Depois que a pipeline publicar as imagens (ou durante o desenvolvimento), você pode rodar o stack completo localmente:
+Depois das pipelines publicarem as imagens no DockerHub, você pode rodar localmente:
+
+### 1. Configure as variáveis de ambiente
 
 ```bash
-# 1. Clone o repositório
-git clone <seu-repositorio>
-cd condocombat
-
-# 2. Crie o arquivo .env a partir do exemplo
+# Crie o arquivo .env na raiz do projeto
 cp .env.example .env
-
-# 3. Edite o .env com sua SECRET_KEY
-#    Gere uma com: python -c 'import secrets; print(secrets.token_urlsafe(32))'
-#    E cole no campo SECRET_KEY=
-
-# 4. Inicie todos os serviços
-docker compose up -d
-
-# 5. Verifique se está tudo funcionando
-curl http://localhost:8000/health
-# Deve retornar: {"status":"ok"}
-
-curl http://localhost:3000
-# Deve retornar a página inicial do CondoCombat
-
-# 6. Acompanhe os logs
-docker compose logs -f
-
-# 7. Para parar e remover os containers
-docker compose down -v
+# Edite .env com suas credenciais DockerHub
 ```
 
-### Comandos úteis
+### 2. Atualize o docker-compose.yml
+
+Substitua `your-dockerhub-username` pelo seu usuário real no DockerHub.
+
+### 3. Inicie os serviços
 
 ```bash
-# Ver status dos serviços
+# Inicia todos os serviços em background
+docker compose up -d
+
+# Acompanha os logs
+docker compose logs -f
+
+# Verifica status dos serviços
 docker compose ps
+```
 
-# Rebuild de um serviço específico
-docker compose build api
+### 4. Acesse as aplicações
 
-# Executar um comando dentro de um container
-docker compose exec api alembic upgrade head
+- **Frontend**: http://localhost:3000
+- **Backend API**: http://localhost:8000
+- **API Docs**: http://localhost:8000/docs
 
-# Ver logs de um serviço específico
-docker compose logs api -f
+### 5. Parar os serviços
 
-# Parar sem remover volumes (dados persistem)
+```bash
+# Para os serviços sem apagar dados
 docker compose down
+
+# Para os serviços e apaga volume do banco (cuidado!)
+docker compose down -v
 ```
 
 ---
@@ -605,12 +542,12 @@ docker compose down
 
 | Critério | Peso | Descrição |
 |----------|------|-----------|
-| Dockerfile do Backend | 15% | Multi-stage, entrypoint com migrations, HEALTHCHECK, não-root |
-| Dockerfile do Frontend | 15% | Multi-stage, otimizado (sem dev deps), não-root |
-| docker-compose.yml | 15% | 3 serviços, health checks, volumes, variáveis de ambiente |
-| Pipeline CI/CD | 25% | Stages corretos, regras de execução, lint → test → build → push |
-| Testes e Lint passando | 20% | Pipeline verde em todas as etapas |
-| Organização e clareza | 10% | Código limpo, boas práticas, variáveis configuradas |
+| Dockerfiles funcionais | 25% | Ambos Dockerfiles buildam e rodam localmente |
+| docker-compose completo | 20% | 3 serviços (api, web, db) com health checks |
+| Pipeline do backend | 20% | Lint → test → build → push funcionando |
+| Pipeline do frontend | 20% | Lint → test → build → push funcionando |
+| Arquivo principal com include | 5% | `.gitlab-ci.yml` inclui os dois pipelines |
+| Boas práticas Docker | 10% | Multi-stage, usuário não-root, health checks |
 
 ---
 
@@ -618,10 +555,12 @@ docker compose down
 
 - [DockerHub — Repositórios](https://hub.docker.com/)
 - [Docker — Boas práticas para Dockerfiles](https://docs.docker.com/develop/develop-images/dockerfile_best-practices/)
+- [FastAPI — Implantação com Docker](https://fastapi.tiangolo.com/deployment/docker/)
+- [Next.js — Implantação com Docker](https://nextjs.org/docs/pages/building-your-application/deploying#docker-image)
 - [GitLab CI/CD — Documentação](https://docs.gitlab.com/ee/ci/)
-- [GitLab CI/CD — Docker](https://docs.gitlab.com/ee/ci/docker/using_docker_images.html)
-- [FastAPI — Deploy com Docker](https://fastapi.tiangolo.com/deployment/docker/)
-- [Next.js — Docker Image](https://nextjs.org/docs/pages/building-your-application/deploying#docker-image)
+- [GitLab CI/CD — Include](https://docs.gitlab.com/ee/ci/yaml/includes.html)
+- [GitLab CI/CD — Rules](https://docs.gitlab.com/ee/ci/yaml/#rules)
+- [PostgreSQL — Docker Hub](https://hub.docker.com/_/postgres)
 - [CondoCombat — Backend](../../backend/)
 - [CondoCombat — Frontend](../../frontend/)
 
@@ -629,17 +568,32 @@ docker compose down
 
 ## 💡 Dicas
 
-1. **Monorepo**: Use `rules:changes` no GitLab CI/CD para evitar execuções desnecessárias quando só a landing page mudar. A pipeline já está configurada com isso.
-2. **Docker-in-Docker**: O GitLab CI/CD usa `docker:dind` (Docker in Docker) para executar comandos Docker dentro do pipeline. O serviço `docker:dind` é necessário para isso.
-3. **DockerHub Token**: Prefira tokens de acesso em vez de senha. Crie em DockerHub → Account Settings → Security.
+1. **Monorepo com `rules:changes`**: O projeto CondoCombat é um monorepo com `landing/`, `frontend/` e `backend/`. Use `rules:changes` para que cada pipeline só execute quando os arquivos do seu diretório forem alterados. Isso evita execuções desnecessárias.
+
+2. **Docker-in-Docker (dind)**: O GitLab CI/CD usa o serviço `docker:dind` (Docker in Docker) para executar comandos Docker dentro do pipeline. Sem ele, o `docker build` e `docker push` não funcionam. A variável `DOCKER_TLS_CERTDIR: ""` é necessária para desabilitar TLS no dind.
+
+3. **DockerHub Token**: Prefira tokens de acesso em vez de senha. Crie em DockerHub → Account Settings → Security. Use o token como valor da variável `DOCKERHUB_TOKEN`.
+
 4. **Tags**: Use tags semânticas (`v1.0.0`, `v1.1.0`) em vez de `latest` para produção. O `latest` é suficiente para este desafio, mas em projetos reais prefira versionamento.
+
 5. **entrypoint.sh**: Não esqueça de dar permissão de execução: `chmod +x backend/entrypoint.sh`. Sem isso o container vai falhar ao iniciar.
+
 6. **SECRET_KEY**: O backend valida a SECRET_KEY na inicialização. Se não for definida, o container vai crashar com um `ValueError`. Sempre defina essa variável.
+
 7. **Cache do Docker**: A ordem das instruções no Dockerfile importa. Coloque `COPY requirements.txt` antes do código fonte para aproveitar o cache de camadas do Docker.
-8. **Variáveis Protegidas**: Marque `DOCKERHUB_TOKEN` e `SECRET_KEY` como "Masked" no GitLab. Se a branch `main` for protegida, marque também como "Protected".
+
+8. **Cache do pip/npm**: As pipelines configuram cache para `PIP_CACHE_DIR` e `npm_config_cache`. Isso acelera execuções subsequentes ao reutilizar pacotes já baixados.
+
+9. **Variáveis Protegidas**: Marque `DOCKERHUB_TOKEN` e `SECRET_KEY` como "Masked" no GitLab. Se a branch `main` for protegida, marque também como "Protected" para que só pipelines da `main` tenham acesso.
+
+10. **Health checks**: Todos os contêineres no docker-compose incluem health checks. O backend depende do banco estar saudável (`condition: service_healthy`), garantindo a ordem correta de inicialização.
 
 ---
 
+> **⚠️ Aviso**
+>
+> **Não há etapa de deploy.** A pipeline termina no push das imagens para o DockerHub.
+>
 > Escolha a plataforma desejada abaixo:
 >
 > | Plataforma | Arquivo |

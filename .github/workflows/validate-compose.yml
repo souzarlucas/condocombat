@@ -43,6 +43,9 @@ jobs:
       - name: Show diagnostics on failure
         if: failure()
         run: |
+          docker inspect --format '{{json .Config.Healthcheck.Test}}' condocombat-web || true
+          docker exec condocombat-web node -e "fetch('http://127.0.0.1:3000/').then(async r => { console.log('root', r.status, r.url); console.log((await r.text()).slice(0,300)); if (!r.ok) process.exit(1) }).catch(e => { console.error(e); process.exit(1) })" || true
+          docker exec condocombat-web node -e "fetch('http://127.0.0.1:3000/dashboard').then(async r => { console.log('dashboard', r.status, r.url); console.log((await r.text()).slice(0,300)); if (!r.ok) process.exit(1) }).catch(e => { console.error(e); process.exit(1) })" || true
           docker inspect --format '{{json .State.Health}}' condocombat-web || true
           docker compose logs --no-color
 

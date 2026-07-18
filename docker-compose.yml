@@ -1,0 +1,61 @@
+name: condocombat
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: condocombat-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-condocombat}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-condocombat}
+      POSTGRES_DB: ${POSTGRES_DB:-condocombat}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-condocombat} -d ${POSTGRES_DB:-condocombat}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    image: ${DOCKERHUB_USERNAME:-souzarlucas}/condocombat-backend:latest
+    container_name: condocombat-api
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-condocombat}:${POSTGRES_PASSWORD:-condocombat}@db:5432/${POSTGRES_DB:-condocombat}
+      SECRET_KEY: ${SECRET_KEY:?Defina SECRET_KEY no ambiente ou em um arquivo .env}
+      CORS_ORIGINS: http://localhost:3000
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+
+  web:
+    image: ${DOCKERHUB_USERNAME:-souzarlucas}/condocombat-frontend:latest
+    container_name: condocombat-web
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+    driver: local

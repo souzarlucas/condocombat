@@ -1,0 +1,49 @@
+name: Validate Docker Compose
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-compose:
+    name: Run Published Stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Pull published images
+        run: docker compose pull
+
+      - name: Start complete stack
+        run: docker compose up -d --wait --wait-timeout 180
+
+      - name: Show container health
+        run: docker compose ps
+
+      - name: Test backend health endpoint
+        run: curl --fail --show-error http://localhost:8000/health
+
+      - name: Test frontend
+        run: curl --fail --show-error --output /dev/null http://localhost:3000
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Stop and clean stack
+        if: always()
+        run: docker compose down -v --remove-orphans

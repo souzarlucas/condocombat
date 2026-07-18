@@ -40,9 +40,11 @@ jobs:
       - name: Test frontend
         run: curl --fail --show-error --output /dev/null http://localhost:3000
 
-      - name: Show logs on failure
+      - name: Show diagnostics on failure
         if: failure()
-        run: docker compose logs --no-color
+        run: |
+          docker inspect --format '{{json .State.Health}}' condocombat-web || true
+          docker compose logs --no-color
 
       - name: Stop and clean stack
         if: always()
